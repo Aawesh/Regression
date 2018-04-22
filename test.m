@@ -1,0 +1,1 @@
+[a,~,b] = digitTrain4DArrayData

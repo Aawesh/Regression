@@ -1,0 +1,111 @@
+filename = 'orientation_transformed.csv';
+M = csvread(filename);
+
+[m,n] = size(M);
+n_features = 12;
+
+trainRatio = 0.8;
+validationRatio = 0.2;
+testRatio = 0;
+
+window_size = 90;
+
+
+
+[trainInd,validationInd,~] = dividerand(m,trainRatio,validationRatio,testRatio);
+
+% size(trainInd)
+% size(validationInd)
+% size(testInd)
+
+train = M(trainInd,:);
+%test = M(testInd,:);
+validation = M(validationInd,:);
+
+
+XTrain = train(:,2:n_features+1);
+YTrain = train(:,1);
+
+XValidation = validation(:,2:n_features+1);
+YValidation = validation(:,1);
+
+XTest = test(:,2:n_features+1);
+YTest = test(:,1);
+
+num_4d_rows = floor(size(XTrain,1)/window_size)*window_size;
+XTrain = XTrain(1:(num_4d_rows),:);
+XTrain = reshape(XTrain,window_size,n_features,1,[]);
+
+start = 1;
+for i = 1: num_4d_rows/90
+    YTrain(i) = mode(YTrain(start:start+90-1));
+    start = start+90;
+end
+
+YTrain(n+1:end) = []
+num_4d_rows = floor(size(XValidation,1)/window_size)*window_size;
+YValidation = XValidation(1:(num_4d_rows),:);
+XValidation = reshape(XValidation,window_size,n_features,1,[]);
+
+start = 1;
+for i = 1: num_4d_rows/90
+    YValidation(i) = mode(YValidation(start:start+90-1));
+    start = start+90;
+end
+
+
+num_4d_rows = floor(size(XValidation,1)/window_size)*window_size;
+XValidation = XValidation(1:(num_4d_rows),:);
+XValidation = reshape(XValidation,[],1,window_size,n_features);
+
+layers = [
+imageInputLayer([window_size n_features 1])
+
+convolution2dLayer(60,60,'Padding','same')
+batchNormalizationLayer
+reluLayer
+
+maxPooling2dLayer(2,'Stride',2)
+
+convolution2dLayer(6,6,'Padding','same')
+batchNormalizationLayer
+reluLayer
+
+dropoutLayer(0.2)
+fullyConnectedLayer(1000)
+fullyConnectedLayer(1)
+regressionLayer];
+
+miniBatchSize  = 10;
+validationFrequency = floor(numel(YTrain)/miniBatchSize);
+
+options = trainingOptions('sgdm',...
+    'MiniBatchSize',miniBatchSize,...
+    'MaxEpochs',30,...
+    'InitialLearnRate',1e-4,...
+    'LearnRateSchedule','piecewise',...
+    'LearnRateDropFactor',0.1,...
+    'LearnRateDropPeriod',20,...
+    'Shuffle','every-epoch',...
+    'validationData',{XValidation,YValidation},...
+    'validationFrequency',validationFrequency,...
+    'validationPatience',Inf,...
+    'Plots','training-progress',...
+    'Verbose',false);
+
+net = trainNetwork(XTrain,YTrain,layers,options);
+net.Layers
+
+YPredicted = predict(net,XValidation)
+
+predictionError = YValidation - YPredicted;
+
+thr = 0.5;
+numCorrect = sum(abs(predictionError) < thr);
+numValidationData = numel(YValidation);
+
+accuracy = numCorrect/numValidationData
+
+squares = predictionError.^2;
+rmse = sqrt(mean(squares))
+
